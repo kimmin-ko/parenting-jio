@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"npx create-expo-app@latest . --template blank-typescript 2>&1\",\"timeout\":120000,\"description\":\"Create Expo project with TypeScript template\"}",
+  "error": "Exit code 1\nnpm WARN exec The following package was not found and will be installed: create-expo-app@3.5.3\nCreating an Expo project using the blank-typescript template.\n\nThe directory mobile-app has files that might be overwritten:\n\n  .claude\n  .omc\n\nTry using a new directory name, or moving these files.",
+  "timestamp": "2026-03-16T14:55:12.790Z",
+  "retry_count": 1
+}
