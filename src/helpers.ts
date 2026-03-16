@@ -5,7 +5,6 @@ export const C = {
   bg: '#F7F8FA',
   white: '#FFFFFF',
   black: '#191F28',
-  gray900: '#333D4B',
   gray700: '#4E5968',
   gray500: '#8B95A1',
   gray400: '#B0B8C1',
