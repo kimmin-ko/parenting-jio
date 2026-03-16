@@ -39,35 +39,45 @@ struct RecordFeedingIntent: AppIntent {
         let defaults = UserDefaults(suiteName: "group.com.kimmin.parentingjio")
         let data = loadWidgetData()
 
-        // Create new record
+        // Create new record with unique ID distinguishable as widget-created
         let now = Date().timeIntervalSince1970 * 1000
+        let shortUUID = UUID().uuidString.prefix(7)
         let record: [String: Any] = [
-            "id": "\(Int(now))",
+            "id": "\(Int(now))-\(shortUUID)-w",
             "timestamp": now,
             "amount": data.defaultMl
         ]
 
-        // Load existing records
-        var records: [[String: Any]] = []
-        if let jsonString = defaults?.string(forKey: "feeding_records"),
+        // Append to pending_widget_records so the app can merge on next open
+        var pending: [[String: Any]] = []
+        if let jsonString = defaults?.string(forKey: "pending_widget_records"),
            let jsonData = jsonString.data(using: .utf8),
            let decoded = try? JSONSerialization.jsonObject(with: jsonData) as? [[String: Any]] {
-            records = decoded
+            pending = decoded
         }
-        records.insert(record, at: 0)
-
-        // Save records
-        if let encoded = try? JSONSerialization.data(withJSONObject: records),
+        pending.append(record)
+        if let encoded = try? JSONSerialization.data(withJSONObject: pending),
            let jsonString = String(data: encoded, encoding: .utf8) {
-            defaults?.set(jsonString, forKey: "feeding_records")
+            defaults?.set(jsonString, forKey: "pending_widget_records")
         }
+
+        // Determine if todayCount should reset (date changed since last feeding)
+        let calendar = Calendar.current
+        let isToday: Bool
+        if let lastTime = data.lastFeedingTime {
+            isToday = calendar.isDateInToday(Date(timeIntervalSince1970: lastTime / 1000))
+        } else {
+            isToday = false
+        }
+        let newCount = isToday ? data.todayCount + 1 : 1
+        let newTotal = isToday ? data.todayTotal + data.defaultMl : data.defaultMl
 
         // Update widget data
         let updatedData = WidgetData(
             lastFeedingTime: now,
             lastFeedingAmount: data.defaultMl,
-            todayCount: data.todayCount + 1,
-            todayTotal: data.todayTotal + data.defaultMl,
+            todayCount: newCount,
+            todayTotal: newTotal,
             defaultMl: data.defaultMl,
             timerEnd: data.timerEnd
         )

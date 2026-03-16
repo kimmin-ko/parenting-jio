@@ -23,11 +23,26 @@ import {
 } from './src/storage';
 import { C, generateId, formatDate } from './src/helpers';
 import { scheduleNotification, cancelScheduledNotification } from './src/notifications';
-import { syncToWidget } from './src/sharedStorage';
+import { syncToWidget, loadPendingWidgetRecords, clearPendingWidgetRecords } from './src/sharedStorage';
+import { mergeWidgetRecords } from './src/storage';
 import RecordTab from './src/components/RecordTab';
 import HistoryTab from './src/components/HistoryTab';
 import StatsTab from './src/components/StatsTab';
 import SettingsTab from './src/components/SettingsTab';
+
+// Sync data to iOS widget (pure function – no component state captured)
+function syncWidget(recs: FeedingRecord[], sets: Settings, timer: number | null): void {
+  const today = formatDate(new Date());
+  const todayRecs = recs.filter((r) => formatDate(new Date(r.timestamp)) === today);
+  syncToWidget({
+    lastFeedingTime: recs.length > 0 ? recs[0].timestamp : null,
+    lastFeedingAmount: recs.length > 0 ? recs[0].amount : null,
+    todayCount: todayRecs.length,
+    todayTotal: todayRecs.reduce((s, r) => s + r.amount, 0),
+    defaultMl: sets.defaultMl,
+    timerEnd: timer,
+  });
+}
 
 // ─── Main App ───
 export default function App() {
@@ -39,17 +54,29 @@ export default function App() {
   const [showAfterRecord, setShowAfterRecord] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const notifIdRef = useRef<string | null>(null);
+  const timerRecordIdRef = useRef<string | null>(null);
+  const lastRecordIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     (async () => {
       const [r, s, t] = await Promise.all([loadRecords(), loadSettings(), loadTimerEnd()]);
-      setRecords(r);
-      setSettings(s);
-      if (t && t > Date.now()) {
-        setTimerEnd(t);
-      } else if (t) {
-        saveTimerEnd(null);
+
+      // Merge any records that were added via the widget while the app was closed
+      const pending = await loadPendingWidgetRecords();
+      const merged = await mergeWidgetRecords(pending);
+      if (pending.length > 0) {
+        await clearPendingWidgetRecords();
       }
+
+      const finalRecords = pending.length > 0 ? merged : r;
+      setRecords(finalRecords);
+      setSettings(s);
+      const validTimer = t && t > Date.now() ? t : null;
+      if (t && !validTimer) saveTimerEnd(null);
+      setTimerEnd(validTimer);
+
+      // Sync to widget on startup to refresh stale data (e.g. after date change)
+      syncWidget(finalRecords, s, validTimer);
     })();
   }, []);
 
@@ -78,36 +105,25 @@ export default function App() {
     };
   }, [timerEnd]);
 
-  // Sync data to iOS widget
-  const syncWidget = useCallback((recs: FeedingRecord[], sets: Settings, timer: number | null) => {
-    const today = formatDate(new Date());
-    const todayRecs = recs.filter((r) => formatDate(new Date(r.timestamp)) === today);
-    syncToWidget({
-      lastFeedingTime: recs.length > 0 ? recs[0].timestamp : null,
-      lastFeedingAmount: recs.length > 0 ? recs[0].amount : null,
-      todayCount: todayRecs.length,
-      todayTotal: todayRecs.reduce((s, r) => s + r.amount, 0),
-      defaultMl: sets.defaultMl,
-      timerEnd: timer,
-    });
-  }, []);
-
   const handleRecord = useCallback(async () => {
     const record: FeedingRecord = {
       id: generateId(),
       timestamp: Date.now(),
       amount: settings.defaultMl,
     };
+    lastRecordIdRef.current = record.id;
     const updated = await addRecord(record);
     setRecords(updated);
     setShowAfterRecord(true);
     syncWidget(updated, settings, timerEnd);
-  }, [settings.defaultMl, settings, timerEnd, syncWidget]);
+  }, [settings, timerEnd]);
 
   const handleStartTimer = useCallback(async () => {
     const end = Date.now() + settings.timerMinutes * 60 * 1000;
     setTimerEnd(end);
     await saveTimerEnd(end);
+    // Link timer to the record that triggered it
+    timerRecordIdRef.current = lastRecordIdRef.current;
     if (Platform.OS !== 'web') {
       const nid = await scheduleNotification(settings.timerMinutes);
       notifIdRef.current = nid;
@@ -119,6 +135,7 @@ export default function App() {
     setTimerEnd(null);
     setRemaining(0);
     await saveTimerEnd(null);
+    timerRecordIdRef.current = null;
     if (notifIdRef.current) {
       await cancelScheduledNotification(notifIdRef.current);
       notifIdRef.current = null;
@@ -128,13 +145,27 @@ export default function App() {
   const handleDelete = useCallback(async (id: string) => {
     const updated = await deleteRecord(id);
     setRecords(updated);
-    syncWidget(updated, settings, timerEnd);
-  }, [settings, timerEnd, syncWidget]);
+    // Cancel timer if linked record is deleted
+    if (timerRecordIdRef.current === id) {
+      setTimerEnd(null);
+      setRemaining(0);
+      await saveTimerEnd(null);
+      timerRecordIdRef.current = null;
+      if (notifIdRef.current) {
+        await cancelScheduledNotification(notifIdRef.current);
+        notifIdRef.current = null;
+      }
+      syncWidget(updated, settings, null);
+    } else {
+      syncWidget(updated, settings, timerEnd);
+    }
+  }, [settings, timerEnd]);
 
   const handleUpdateTime = useCallback(async (id: string, timestamp: number) => {
     const updated = await updateRecord(id, { timestamp });
     setRecords(updated);
-  }, []);
+    syncWidget(updated, settings, timerEnd);
+  }, [settings, timerEnd]);
 
   const handleDismissPrompt = useCallback(() => {
     setShowAfterRecord(false);
