@@ -12,7 +12,13 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.kimmin.parentingjio",
+      "entitlements": {
+        "com.apple.security.application-groups": [
+          "group.com.kimmin.parentingjio"
+        ]
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -25,6 +31,21 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "./plugins/withWidget"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "7dd5b9cd-952e-48bd-8340-4d40571336e9"
+      }
+    },
+    "owner": "kimmin2300",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/7dd5b9cd-952e-48bd-8340-4d40571336e9"
     }
   }
 }
