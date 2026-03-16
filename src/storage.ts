@@ -4,19 +4,30 @@ import { FeedingRecord, Settings } from './types';
 const RECORDS_KEY = 'feeding_records';
 const SETTINGS_KEY = 'settings';
 const TIMER_KEY = 'timer_end';
+const MAX_RECORDS = 5000;
 
 const DEFAULT_SETTINGS: Settings = {
   defaultMl: 120,
   timerMinutes: 180,
 };
 
+function safeParse<T>(json: string | null, fallback: T): T {
+  if (!json) return fallback;
+  try {
+    return JSON.parse(json);
+  } catch {
+    return fallback;
+  }
+}
+
 export async function loadRecords(): Promise<FeedingRecord[]> {
   const json = await AsyncStorage.getItem(RECORDS_KEY);
-  return json ? JSON.parse(json) : [];
+  return safeParse<FeedingRecord[]>(json, []);
 }
 
 export async function saveRecords(records: FeedingRecord[]): Promise<void> {
-  await AsyncStorage.setItem(RECORDS_KEY, JSON.stringify(records));
+  const trimmed = records.length > MAX_RECORDS ? records.slice(0, MAX_RECORDS) : records;
+  await AsyncStorage.setItem(RECORDS_KEY, JSON.stringify(trimmed));
 }
 
 export async function addRecord(record: FeedingRecord): Promise<FeedingRecord[]> {
@@ -26,9 +37,24 @@ export async function addRecord(record: FeedingRecord): Promise<FeedingRecord[]>
   return records;
 }
 
+export async function deleteRecord(id: string): Promise<FeedingRecord[]> {
+  const records = await loadRecords();
+  const filtered = records.filter((r) => r.id !== id);
+  await saveRecords(filtered);
+  return filtered;
+}
+
+export async function updateRecord(id: string, patch: Partial<FeedingRecord>): Promise<FeedingRecord[]> {
+  const records = await loadRecords();
+  const idx = records.findIndex((r) => r.id === id);
+  if (idx !== -1) records[idx] = { ...records[idx], ...patch };
+  await saveRecords(records);
+  return records;
+}
+
 export async function loadSettings(): Promise<Settings> {
   const json = await AsyncStorage.getItem(SETTINGS_KEY);
-  return json ? { ...DEFAULT_SETTINGS, ...JSON.parse(json) } : DEFAULT_SETTINGS;
+  return { ...DEFAULT_SETTINGS, ...safeParse<Partial<Settings>>(json, {}) };
 }
 
 export async function saveSettings(settings: Settings): Promise<void> {
