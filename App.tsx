@@ -21,8 +21,9 @@ import {
   loadTimerEnd,
   saveTimerEnd,
 } from './src/storage';
-import { C, generateId } from './src/helpers';
+import { C, generateId, formatDate } from './src/helpers';
 import { scheduleNotification, cancelScheduledNotification } from './src/notifications';
+import { syncToWidget } from './src/sharedStorage';
 import RecordTab from './src/components/RecordTab';
 import HistoryTab from './src/components/HistoryTab';
 import StatsTab from './src/components/StatsTab';
@@ -77,6 +78,20 @@ export default function App() {
     };
   }, [timerEnd]);
 
+  // Sync data to iOS widget
+  const syncWidget = useCallback((recs: FeedingRecord[], sets: Settings, timer: number | null) => {
+    const today = formatDate(new Date());
+    const todayRecs = recs.filter((r) => formatDate(new Date(r.timestamp)) === today);
+    syncToWidget({
+      lastFeedingTime: recs.length > 0 ? recs[0].timestamp : null,
+      lastFeedingAmount: recs.length > 0 ? recs[0].amount : null,
+      todayCount: todayRecs.length,
+      todayTotal: todayRecs.reduce((s, r) => s + r.amount, 0),
+      defaultMl: sets.defaultMl,
+      timerEnd: timer,
+    });
+  }, []);
+
   const handleRecord = useCallback(async () => {
     const record: FeedingRecord = {
       id: generateId(),
@@ -86,7 +101,8 @@ export default function App() {
     const updated = await addRecord(record);
     setRecords(updated);
     setShowAfterRecord(true);
-  }, [settings.defaultMl]);
+    syncWidget(updated, settings, timerEnd);
+  }, [settings.defaultMl, settings, timerEnd, syncWidget]);
 
   const handleStartTimer = useCallback(async () => {
     const end = Date.now() + settings.timerMinutes * 60 * 1000;
@@ -112,7 +128,8 @@ export default function App() {
   const handleDelete = useCallback(async (id: string) => {
     const updated = await deleteRecord(id);
     setRecords(updated);
-  }, []);
+    syncWidget(updated, settings, timerEnd);
+  }, [settings, timerEnd, syncWidget]);
 
   const handleUpdateTime = useCallback(async (id: string, timestamp: number) => {
     const updated = await updateRecord(id, { timestamp });
@@ -127,7 +144,8 @@ export default function App() {
     const next = { ...settings, ...patch };
     setSettings(next);
     await saveSettings(next);
-  }, [settings]);
+    syncWidget(records, next, timerEnd);
+  }, [settings, records, timerEnd, syncWidget]);
 
   const tabs: { key: Tab; label: string; icon: keyof typeof Ionicons.glyphMap; iconOutline: keyof typeof Ionicons.glyphMap }[] = [
     { key: 'record', label: '기록', icon: 'add-circle', iconOutline: 'add-circle-outline' },
