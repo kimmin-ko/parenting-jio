@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   ScrollView,
   Modal,
-  Alert,
 } from 'react-native';
 import { FeedingRecord } from '../types';
 import { C, formatTime, formatDateKr, groupByDate } from '../helpers';
@@ -109,12 +108,7 @@ export default function HistoryTab({ records, onDelete, onUpdateTime }: Props) {
                     </View>
                     <TouchableOpacity
                       style={s.deleteBtn}
-                      onPress={() => {
-                        Alert.alert('삭제 확인', '이 기록을 삭제할까요?', [
-                          { text: '취소', style: 'cancel' },
-                          { text: '삭제', style: 'destructive', onPress: () => onDelete(r.id) },
-                        ]);
-                      }}
+                      onPress={() => onDelete(r.id)}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     >
                       <Text style={s.deleteBtnText}>삭제</Text>
