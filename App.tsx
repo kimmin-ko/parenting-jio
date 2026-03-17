@@ -80,6 +80,11 @@ function AppContent() {
   const lastRecordIdRef = useRef<string | null>(null);
   const unsubRef = useRef<(() => void) | null>(null);
   const familyCodeRef = useRef<string | null>(null);
+  const settingsRef = useRef<Settings>(settings);
+  const timerEndRef = useRef<number | null>(timerEnd);
+
+  useEffect(() => { settingsRef.current = settings; }, [settings]);
+  useEffect(() => { timerEndRef.current = timerEnd; }, [timerEnd]);
 
   useEffect(() => {
     (async () => {
@@ -104,7 +109,7 @@ function AppContent() {
         await initialSync(fc);
         unsubRef.current = subscribeToRecords(fc, (synced) => {
           setRecords(synced);
-          syncWidget(synced, s, validTimer);
+          syncWidget(synced, settingsRef.current, timerEndRef.current);
         });
       }
     })();
@@ -212,6 +217,7 @@ function AppContent() {
   }, [settings, records, timerEnd]);
 
   const handleCreateFamily = useCallback(async () => {
+    if (unsubRef.current) unsubRef.current();
     const code = generateFamilyCode();
     await saveFamilyCode(code);
     setFamilyCode(code);
@@ -219,6 +225,7 @@ function AppContent() {
     await initialSync(code);
     unsubRef.current = subscribeToRecords(code, (synced) => {
       setRecords(synced);
+      syncWidget(synced, settingsRef.current, timerEndRef.current);
     });
   }, []);
 
@@ -228,13 +235,14 @@ function AppContent() {
       Alert.alert('오류', '6자리 가족 코드를 입력해주세요.');
       return;
     }
+    if (unsubRef.current) unsubRef.current();
     await saveFamilyCode(upper);
     setFamilyCode(upper);
     familyCodeRef.current = upper;
     await initialSync(upper);
-    if (unsubRef.current) unsubRef.current();
     unsubRef.current = subscribeToRecords(upper, (synced) => {
       setRecords(synced);
+      syncWidget(synced, settingsRef.current, timerEndRef.current);
     });
   }, []);
 

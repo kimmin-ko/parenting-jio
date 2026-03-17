@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, TextInput, Alert } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, TextInput, Alert, Platform } from 'react-native';
 import { Settings } from '../types';
 import { C } from '../helpers';
 
@@ -46,10 +46,14 @@ export default function SettingsTab({
             <TouchableOpacity
               style={s.btnDanger}
               onPress={() => {
-                Alert.alert('동기화 해제', '가족 동기화를 해제할까요?\n로컬 기록은 유지됩니다.', [
-                  { text: '취소', style: 'cancel' },
-                  { text: '해제', style: 'destructive', onPress: onLeaveFamily },
-                ]);
+                if (Platform.OS === 'web') {
+                  onLeaveFamily();
+                } else {
+                  Alert.alert('동기화 해제', '가족 동기화를 해제할까요?\n로컬 기록은 유지됩니다.', [
+                    { text: '취소', style: 'cancel' },
+                    { text: '해제', style: 'destructive', onPress: onLeaveFamily },
+                  ]);
+                }
               }}
             >
               <Text style={s.btnDangerText}>동기화 해제</Text>

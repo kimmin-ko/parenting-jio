@@ -1,4 +1,4 @@
-import { ref, onValue, set, remove, off } from 'firebase/database';
+import { ref, onValue, set, remove, off, get } from 'firebase/database';
 import { signInAnonymously } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db, auth } from './firebase';
@@ -86,14 +86,11 @@ export async function updateRecordInFirebase(
 }
 
 // ─── Real-time Listener ───
-let currentListener: string | null = null;
-
 export function subscribeToRecords(
   familyCode: string,
   onRecordsChanged: (records: FeedingRecord[]) => void,
 ): () => void {
   const dbRef = familyRef(familyCode);
-  currentListener = familyCode;
 
   const unsubscribe = onValue(dbRef, (snapshot) => {
     const data = snapshot.val() as Record<string, FeedingRecord> | null;
@@ -105,7 +102,6 @@ export function subscribeToRecords(
 
   return () => {
     off(dbRef);
-    currentListener = null;
   };
 }
 
@@ -114,10 +110,18 @@ export async function initialSync(familyCode: string): Promise<FeedingRecord[]> 
   await ensureAuth();
   const local = await loadRecords();
 
-  // Push local records to Firebase (merge)
-  if (local.length > 0) {
-    await pushRecordsToFirebase(familyCode, local);
-  }
+  // Fetch remote records and merge with local by id
+  const snapshot = await get(familyRef(familyCode));
+  const remoteData = snapshot.val() as Record<string, FeedingRecord> | null;
+  const remote = mapToRecords(remoteData);
 
-  return local;
+  const mergedMap: Record<string, FeedingRecord> = {};
+  for (const r of remote) mergedMap[r.id] = r;
+  for (const r of local) mergedMap[r.id] = r;
+  const merged = Object.values(mergedMap).sort((a, b) => b.timestamp - a.timestamp);
+
+  await set(familyRef(familyCode), recordsToMap(merged));
+  await saveRecords(merged);
+
+  return merged;
 }

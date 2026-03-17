@@ -16,7 +16,6 @@
       "bundleIdentifier": "com.kimmin.parentingjio",
       "entitlements": {
         "com.apple.security.application-groups": [
-          "group.com.kimmin.parentingjio",
           "group.com.kimmin.parentingjio"
         ]
       },
