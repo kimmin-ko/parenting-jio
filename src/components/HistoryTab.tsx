@@ -136,7 +136,7 @@ const s = StyleSheet.create({
   cardSummary: { fontSize: 13, color: C.gray500, fontWeight: '500' },
   historyRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderTopWidth: 1, borderTopColor: C.gray100 },
   historyLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  historyTimeEditable: { fontSize: 15, color: C.blue, fontWeight: '600', fontVariant: ['tabular-nums'], textDecorationLine: 'underline', textDecorationStyle: 'dotted' },
+  historyTimeEditable: { fontSize: 15, color: C.blue, fontWeight: '600', fontVariant: ['tabular-nums'] },
   historyAmount: { fontSize: 15, fontWeight: '700', color: C.black },
   deleteBtn: { paddingVertical: 4, paddingHorizontal: 10, borderRadius: 6, backgroundColor: C.redBg },
   deleteBtnText: { fontSize: 12, fontWeight: '600', color: C.red },
@@ -155,4 +155,6 @@ const s = StyleSheet.create({
   btnPrimaryText: { fontSize: 15, fontWeight: '700', color: '#fff' },
   btnGhost: { flex: 1, backgroundColor: C.gray100, paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
   btnGhostText: { fontSize: 15, fontWeight: '600', color: C.gray700 },
+});
+ext: { fontSize: 15, fontWeight: '600', color: C.gray700 },
 });
