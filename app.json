@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "parenting-jio",
+    "name": "지오 분유",
     "slug": "parenting-jio",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -30,13 +30,15 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.kimmin.parentingjio"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "./plugins/withWidget"
+      "./plugins/withWidget",
+      "./plugins/withWatchApp"
     ],
     "extra": {
       "eas": {

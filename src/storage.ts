@@ -61,16 +61,6 @@ export async function saveSettings(settings: Settings): Promise<void> {
   await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
 }
 
-export async function mergeWidgetRecords(pending: FeedingRecord[]): Promise<FeedingRecord[]> {
-  if (pending.length === 0) return loadRecords();
-  const existing = await loadRecords();
-  const existingIds = new Set(existing.map((r) => r.id));
-  const newRecords = pending.filter((r) => !existingIds.has(r.id));
-  if (newRecords.length === 0) return existing;
-  const merged = [...existing, ...newRecords].sort((a, b) => b.timestamp - a.timestamp);
-  await saveRecords(merged);
-  return merged;
-}
 
 export async function loadTimerEnd(): Promise<number | null> {
   const val = await AsyncStorage.getItem(TIMER_KEY);

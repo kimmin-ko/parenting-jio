@@ -1,6 +1,7 @@
 import { ref, onValue, set, remove, off, get } from 'firebase/database';
 import { signInAnonymously } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform, NativeModules } from 'react-native';
 import { db, auth } from './firebase';
 import { FeedingRecord } from './types';
 import { loadRecords, saveRecords } from './storage';
@@ -9,11 +10,23 @@ const FAMILY_CODE_KEY = 'family_code';
 
 // ─── Family Code ───
 export async function loadFamilyCode(): Promise<string | null> {
-  return AsyncStorage.getItem(FAMILY_CODE_KEY);
+  const code = await AsyncStorage.getItem(FAMILY_CODE_KEY);
+  if (code) sendFamilyCodeToWatch(code);
+  return code;
 }
 
 export async function saveFamilyCode(code: string): Promise<void> {
   await AsyncStorage.setItem(FAMILY_CODE_KEY, code);
+  sendFamilyCodeToWatch(code);
+}
+
+function sendFamilyCodeToWatch(code: string): void {
+  if (Platform.OS !== 'ios') return;
+  try {
+    NativeModules.WatchConnectivitySender?.sendFamilyCode(code);
+  } catch {
+    // Watch not available
+  }
 }
 
 export async function clearFamilyCode(): Promise<void> {
