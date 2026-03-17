@@ -5,11 +5,11 @@ import {
   View,
   TouchableOpacity,
   Alert,
-  SafeAreaView,
   Platform,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { FeedingRecord, Settings, Tab } from './src/types';
 import {
   loadRecords,
@@ -20,17 +20,28 @@ import {
   saveSettings,
   loadTimerEnd,
   saveTimerEnd,
+  mergeWidgetRecords,
 } from './src/storage';
 import { C, generateId, formatDate } from './src/helpers';
 import { scheduleNotification, cancelScheduledNotification } from './src/notifications';
 import { syncToWidget, loadPendingWidgetRecords, clearPendingWidgetRecords } from './src/sharedStorage';
-import { mergeWidgetRecords } from './src/storage';
+import {
+  loadFamilyCode,
+  saveFamilyCode,
+  clearFamilyCode,
+  generateFamilyCode,
+  initialSync,
+  subscribeToRecords,
+  pushRecordsToFirebase,
+  deleteRecordFromFirebase,
+  updateRecordInFirebase,
+} from './src/sync';
 import RecordTab from './src/components/RecordTab';
 import HistoryTab from './src/components/HistoryTab';
 import StatsTab from './src/components/StatsTab';
 import SettingsTab from './src/components/SettingsTab';
 
-// Sync data to iOS widget (pure function – no component state captured)
+// Sync data to iOS widget
 function syncWidget(recs: FeedingRecord[], sets: Settings, timer: number | null): void {
   const today = formatDate(new Date());
   const todayRecs = recs.filter((r) => formatDate(new Date(r.timestamp)) === today);
@@ -44,40 +55,60 @@ function syncWidget(recs: FeedingRecord[], sets: Settings, timer: number | null)
   });
 }
 
-// ─── Main App ───
-export default function App() {
+// ─── Tab Config ───
+type IconName = keyof typeof MaterialCommunityIcons.glyphMap;
+const TAB_CONFIG: { key: Tab; label: string; icon: IconName; iconOutline: IconName }[] = [
+  { key: 'record', label: '기록', icon: 'baby-bottle', iconOutline: 'baby-bottle-outline' },
+  { key: 'history', label: '목록', icon: 'clipboard-text-clock', iconOutline: 'clipboard-text-clock-outline' },
+  { key: 'stats', label: '통계', icon: 'chart-bar', iconOutline: 'chart-line' },
+  { key: 'settings', label: '설정', icon: 'cog', iconOutline: 'cog-outline' },
+];
+
+// ─── Main Content ───
+function AppContent() {
+  const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<Tab>('record');
   const [records, setRecords] = useState<FeedingRecord[]>([]);
   const [settings, setSettings] = useState<Settings>({ defaultMl: 120, timerMinutes: 180 });
   const [timerEnd, setTimerEnd] = useState<number | null>(null);
   const [remaining, setRemaining] = useState<number>(0);
   const [showAfterRecord, setShowAfterRecord] = useState(false);
+  const [familyCode, setFamilyCode] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const notifIdRef = useRef<string | null>(null);
   const timerRecordIdRef = useRef<string | null>(null);
   const lastRecordIdRef = useRef<string | null>(null);
+  const unsubRef = useRef<(() => void) | null>(null);
+  const familyCodeRef = useRef<string | null>(null);
 
   useEffect(() => {
     (async () => {
-      const [r, s, t] = await Promise.all([loadRecords(), loadSettings(), loadTimerEnd()]);
-
-      // Merge any records that were added via the widget while the app was closed
+      const [r, s, t, fc] = await Promise.all([
+        loadRecords(), loadSettings(), loadTimerEnd(), loadFamilyCode(),
+      ]);
       const pending = await loadPendingWidgetRecords();
       const merged = await mergeWidgetRecords(pending);
-      if (pending.length > 0) {
-        await clearPendingWidgetRecords();
-      }
-
+      if (pending.length > 0) await clearPendingWidgetRecords();
       const finalRecords = pending.length > 0 ? merged : r;
       setRecords(finalRecords);
       setSettings(s);
       const validTimer = t && t > Date.now() ? t : null;
       if (t && !validTimer) saveTimerEnd(null);
       setTimerEnd(validTimer);
-
-      // Sync to widget on startup to refresh stale data (e.g. after date change)
       syncWidget(finalRecords, s, validTimer);
+
+      // Firebase sync
+      if (fc) {
+        setFamilyCode(fc);
+        familyCodeRef.current = fc;
+        await initialSync(fc);
+        unsubRef.current = subscribeToRecords(fc, (synced) => {
+          setRecords(synced);
+          syncWidget(synced, s, validTimer);
+        });
+      }
     })();
+    return () => { if (unsubRef.current) unsubRef.current(); };
   }, []);
 
   useEffect(() => {
@@ -100,9 +131,7 @@ export default function App() {
     } else {
       setRemaining(0);
     }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [timerEnd]);
 
   const handleRecord = useCallback(async () => {
@@ -116,13 +145,13 @@ export default function App() {
     setRecords(updated);
     setShowAfterRecord(true);
     syncWidget(updated, settings, timerEnd);
+    if (familyCodeRef.current) pushRecordsToFirebase(familyCodeRef.current, updated);
   }, [settings, timerEnd]);
 
   const handleStartTimer = useCallback(async () => {
     const end = Date.now() + settings.timerMinutes * 60 * 1000;
     setTimerEnd(end);
     await saveTimerEnd(end);
-    // Link timer to the record that triggered it
     timerRecordIdRef.current = lastRecordIdRef.current;
     if (Platform.OS !== 'web') {
       const nid = await scheduleNotification(settings.timerMinutes);
@@ -145,7 +174,6 @@ export default function App() {
   const handleDelete = useCallback(async (id: string) => {
     const updated = await deleteRecord(id);
     setRecords(updated);
-    // Cancel timer if linked record is deleted
     if (timerRecordIdRef.current === id) {
       setTimerEnd(null);
       setRemaining(0);
@@ -159,12 +187,17 @@ export default function App() {
     } else {
       syncWidget(updated, settings, timerEnd);
     }
+    if (familyCodeRef.current) deleteRecordFromFirebase(familyCodeRef.current, id);
   }, [settings, timerEnd]);
 
   const handleUpdateTime = useCallback(async (id: string, timestamp: number) => {
     const updated = await updateRecord(id, { timestamp });
     setRecords(updated);
     syncWidget(updated, settings, timerEnd);
+    if (familyCodeRef.current) {
+      const record = updated.find((r) => r.id === id);
+      if (record) updateRecordInFirebase(familyCodeRef.current, id, record);
+    }
   }, [settings, timerEnd]);
 
   const handleDismissPrompt = useCallback(() => {
@@ -176,20 +209,51 @@ export default function App() {
     setSettings(next);
     await saveSettings(next);
     syncWidget(records, next, timerEnd);
-  }, [settings, records, timerEnd, syncWidget]);
+  }, [settings, records, timerEnd]);
 
-  const tabs: { key: Tab; label: string; icon: keyof typeof Ionicons.glyphMap; iconOutline: keyof typeof Ionicons.glyphMap }[] = [
-    { key: 'record', label: '기록', icon: 'add-circle', iconOutline: 'add-circle-outline' },
-    { key: 'history', label: '목록', icon: 'list', iconOutline: 'list-outline' },
-    { key: 'stats', label: '통계', icon: 'stats-chart', iconOutline: 'stats-chart-outline' },
-    { key: 'settings', label: '설정', icon: 'settings', iconOutline: 'settings-outline' },
-  ];
+  const handleCreateFamily = useCallback(async () => {
+    const code = generateFamilyCode();
+    await saveFamilyCode(code);
+    setFamilyCode(code);
+    familyCodeRef.current = code;
+    await initialSync(code);
+    unsubRef.current = subscribeToRecords(code, (synced) => {
+      setRecords(synced);
+    });
+  }, []);
+
+  const handleJoinFamily = useCallback(async (code: string) => {
+    const upper = code.toUpperCase().trim();
+    if (upper.length !== 6) {
+      Alert.alert('오류', '6자리 가족 코드를 입력해주세요.');
+      return;
+    }
+    await saveFamilyCode(upper);
+    setFamilyCode(upper);
+    familyCodeRef.current = upper;
+    await initialSync(upper);
+    if (unsubRef.current) unsubRef.current();
+    unsubRef.current = subscribeToRecords(upper, (synced) => {
+      setRecords(synced);
+    });
+  }, []);
+
+  const handleLeaveFamily = useCallback(async () => {
+    if (unsubRef.current) {
+      unsubRef.current();
+      unsubRef.current = null;
+    }
+    await clearFamilyCode();
+    setFamilyCode(null);
+    familyCodeRef.current = null;
+  }, []);
 
   return (
-    <SafeAreaView style={s.container}>
+    <View style={[s.container, { paddingTop: insets.top }]}>
       <StatusBar style="dark" />
       <View style={s.header}>
-        <Text style={s.headerTitle}>지오 분유</Text>
+        <Text style={s.headerTitle}>지오 분유 기록</Text>
+        <Text style={s.headerSub}>우리 아이 수유 관리</Text>
       </View>
       <View style={s.content}>
         {tab === 'record' && (
@@ -214,23 +278,33 @@ export default function App() {
         )}
         {tab === 'stats' && <StatsTab records={records} />}
         {tab === 'settings' && (
-          <SettingsTab settings={settings} onUpdateSettings={handleUpdateSettings} />
+          <SettingsTab
+            settings={settings}
+            onUpdateSettings={handleUpdateSettings}
+            familyCode={familyCode}
+            onCreateFamily={handleCreateFamily}
+            onJoinFamily={handleJoinFamily}
+            onLeaveFamily={handleLeaveFamily}
+          />
         )}
       </View>
-      <View style={s.tabBar}>
-        {tabs.map((t) => {
+      <View style={[s.tabBar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+        {TAB_CONFIG.map((t) => {
           const isActive = tab === t.key;
           return (
             <TouchableOpacity
               key={t.key}
               style={s.tabItem}
               onPress={() => setTab(t.key)}
+              activeOpacity={0.7}
             >
-              <Ionicons
-                name={isActive ? t.icon : t.iconOutline}
-                size={22}
-                color={isActive ? C.blue : C.gray400}
-              />
+              <View style={[s.tabIconWrap, isActive && s.tabIconWrapActive]}>
+                <MaterialCommunityIcons
+                  name={isActive ? t.icon : t.iconOutline}
+                  size={22}
+                  color={isActive ? C.blue : C.gray400}
+                />
+              </View>
               <Text style={[s.tabText, isActive && s.tabTextActive]}>
                 {t.label}
               </Text>
@@ -238,24 +312,52 @@ export default function App() {
           );
         })}
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
+// ─── Root App ───
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <AppContent />
+    </SafeAreaProvider>
+  );
+}
+
+// ─── Styles ───
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
   header: {
-    paddingTop: Platform.OS === 'web' ? 16 : 8,
-    paddingBottom: 14,
+    paddingTop: 8,
+    paddingBottom: 12,
     paddingHorizontal: 20,
     backgroundColor: C.white,
-    borderBottomWidth: 1,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: C.gray200,
+    alignItems: 'center',
   },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: C.black, textAlign: 'center', letterSpacing: -0.3 },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: C.black, letterSpacing: -0.5 },
+  headerSub: { fontSize: 12, fontWeight: '500', color: C.gray500, marginTop: 2 },
   content: { flex: 1 },
-  tabBar: { flexDirection: 'row', backgroundColor: C.white, borderTopWidth: 1, borderTopColor: C.gray200, paddingBottom: Platform.OS === 'web' ? 10 : 26, paddingTop: 8 },
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: C.white,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.gray200,
+    paddingTop: 6,
+  },
   tabItem: { flex: 1, alignItems: 'center', gap: 2 },
-  tabText: { fontSize: 10, color: C.gray400, fontWeight: '500', marginTop: 2 },
+  tabIconWrap: {
+    width: 36,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  tabIconWrapActive: {
+    backgroundColor: C.blueBg,
+  },
+  tabText: { fontSize: 10, color: C.gray400, fontWeight: '500' },
   tabTextActive: { color: C.blue, fontWeight: '700' },
 });
