@@ -156,5 +156,3 @@ const s = StyleSheet.create({
   btnGhost: { flex: 1, backgroundColor: C.gray100, paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
   btnGhostText: { fontSize: 15, fontWeight: '600', color: C.gray700 },
 });
-ext: { fontSize: 15, fontWeight: '600', color: C.gray700 },
-});
