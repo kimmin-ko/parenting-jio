@@ -18,6 +18,9 @@
         "com.apple.security.application-groups": [
           "group.com.kimmin.parentingjio"
         ]
+      },
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {

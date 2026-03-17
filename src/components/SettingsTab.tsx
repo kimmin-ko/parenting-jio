@@ -1,16 +1,28 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, TextInput } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, TextInput, Alert, Platform } from 'react-native';
 import { Settings } from '../types';
 import { C } from '../helpers';
 
 interface Props {
   settings: Settings;
   onUpdateSettings: (patch: Partial<Settings>) => void;
+  familyCode: string | null;
+  onCreateFamily: () => void;
+  onJoinFamily: (code: string) => void;
+  onLeaveFamily: () => void;
 }
 
-export default function SettingsTab({ settings, onUpdateSettings }: Props) {
+export default function SettingsTab({
+  settings,
+  onUpdateSettings,
+  familyCode,
+  onCreateFamily,
+  onJoinFamily,
+  onLeaveFamily,
+}: Props) {
   const [mlInput, setMlInput] = useState(String(settings.defaultMl));
   const [timerInput, setTimerInput] = useState(String(settings.timerMinutes));
+  const [joinCode, setJoinCode] = useState('');
 
   useEffect(() => {
     setMlInput(String(settings.defaultMl));
@@ -19,6 +31,71 @@ export default function SettingsTab({ settings, onUpdateSettings }: Props) {
 
   return (
     <ScrollView style={s.scroll} contentContainerStyle={s.scrollContent}>
+      {/* 가족 동기화 */}
+      <View style={s.card}>
+        <Text style={s.settingLabel}>가족 동기화</Text>
+        {familyCode ? (
+          <View>
+            <View style={s.codeDisplay}>
+              <Text style={s.codeLabel}>가족 코드</Text>
+              <Text style={s.codeValue}>{familyCode}</Text>
+            </View>
+            <Text style={s.codeHint}>
+              다른 기기에서 이 코드를 입력하면 기록이 동기화됩니다
+            </Text>
+            <TouchableOpacity
+              style={s.btnDanger}
+              onPress={() => {
+                if (Platform.OS === 'web') {
+                  onLeaveFamily();
+                } else {
+                  Alert.alert('동기화 해제', '가족 동기화를 해제할까요?\n로컬 기록은 유지됩니다.', [
+                    { text: '취소', style: 'cancel' },
+                    { text: '해제', style: 'destructive', onPress: onLeaveFamily },
+                  ]);
+                }
+              }}
+            >
+              <Text style={s.btnDangerText}>동기화 해제</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View>
+            <TouchableOpacity style={s.btnPrimary} onPress={onCreateFamily}>
+              <Text style={s.btnPrimaryText}>새 가족 코드 만들기</Text>
+            </TouchableOpacity>
+            <View style={s.divider}>
+              <View style={s.dividerLine} />
+              <Text style={s.dividerText}>또는</Text>
+              <View style={s.dividerLine} />
+            </View>
+            <Text style={s.joinLabel}>기존 가족 코드 입력</Text>
+            <View style={s.joinRow}>
+              <TextInput
+                style={s.joinInput}
+                value={joinCode}
+                onChangeText={setJoinCode}
+                placeholder="6자리 코드"
+                placeholderTextColor={C.gray400}
+                maxLength={6}
+                autoCapitalize="characters"
+              />
+              <TouchableOpacity
+                style={[s.btnJoin, joinCode.length < 6 && s.btnJoinDisabled]}
+                onPress={() => {
+                  onJoinFamily(joinCode);
+                  setJoinCode('');
+                }}
+                disabled={joinCode.length < 6}
+              >
+                <Text style={s.btnJoinText}>참여</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+      </View>
+
+      {/* 기본 분유량 */}
       <View style={s.card}>
         <Text style={s.settingLabel}>기본 분유량 (ml)</Text>
         <View style={s.chipRow}>
@@ -51,6 +128,8 @@ export default function SettingsTab({ settings, onUpdateSettings }: Props) {
           }}
         />
       </View>
+
+      {/* 타이머 간격 */}
       <View style={s.card}>
         <Text style={s.settingLabel}>타이머 간격 (분)</Text>
         <View style={s.chipRow}>
@@ -98,4 +177,22 @@ const s = StyleSheet.create({
   chipText: { fontSize: 14, fontWeight: '600', color: C.gray700 },
   chipTextActive: { color: '#fff' },
   input: { borderWidth: 1, borderColor: C.gray200, borderRadius: 10, paddingVertical: 12, paddingHorizontal: 14, fontSize: 16, color: C.black, backgroundColor: C.gray100 },
+  // Family code styles
+  codeDisplay: { backgroundColor: C.blueBg, borderRadius: 12, padding: 16, alignItems: 'center', marginBottom: 8 },
+  codeLabel: { fontSize: 12, fontWeight: '600', color: C.blue, marginBottom: 4 },
+  codeValue: { fontSize: 28, fontWeight: '800', color: C.blue, letterSpacing: 4, fontVariant: ['tabular-nums'] },
+  codeHint: { fontSize: 13, color: C.gray500, textAlign: 'center', marginBottom: 16 },
+  btnPrimary: { backgroundColor: C.blue, paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
+  btnPrimaryText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  btnDanger: { backgroundColor: C.redBg, paddingVertical: 12, borderRadius: 12, alignItems: 'center' },
+  btnDangerText: { fontSize: 14, fontWeight: '600', color: C.red },
+  divider: { flexDirection: 'row', alignItems: 'center', marginVertical: 16 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: C.gray200 },
+  dividerText: { marginHorizontal: 12, fontSize: 13, color: C.gray400 },
+  joinLabel: { fontSize: 14, fontWeight: '600', color: C.gray700, marginBottom: 8 },
+  joinRow: { flexDirection: 'row', gap: 8 },
+  joinInput: { flex: 1, borderWidth: 1, borderColor: C.gray200, borderRadius: 10, paddingVertical: 12, paddingHorizontal: 14, fontSize: 18, fontWeight: '700', color: C.black, backgroundColor: C.gray100, letterSpacing: 4, textAlign: 'center' },
+  btnJoin: { backgroundColor: C.blue, paddingHorizontal: 20, borderRadius: 10, justifyContent: 'center' },
+  btnJoinDisabled: { backgroundColor: C.gray200 },
+  btnJoinText: { fontSize: 15, fontWeight: '700', color: '#fff' },
 });
