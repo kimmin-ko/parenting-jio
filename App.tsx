@@ -20,11 +20,10 @@ import {
   saveSettings,
   loadTimerEnd,
   saveTimerEnd,
-  mergeWidgetRecords,
 } from './src/storage';
 import { C, generateId, formatDate } from './src/helpers';
 import { scheduleNotification, cancelScheduledNotification } from './src/notifications';
-import { syncToWidget, loadPendingWidgetRecords, clearPendingWidgetRecords } from './src/sharedStorage';
+import { syncToWidget, syncFamilyCodeToWidget } from './src/sharedStorage';
 import {
   loadFamilyCode,
   saveFamilyCode,
@@ -91,21 +90,18 @@ function AppContent() {
       const [r, s, t, fc] = await Promise.all([
         loadRecords(), loadSettings(), loadTimerEnd(), loadFamilyCode(),
       ]);
-      const pending = await loadPendingWidgetRecords();
-      const merged = await mergeWidgetRecords(pending);
-      if (pending.length > 0) await clearPendingWidgetRecords();
-      const finalRecords = pending.length > 0 ? merged : r;
-      setRecords(finalRecords);
+      setRecords(r);
       setSettings(s);
       const validTimer = t && t > Date.now() ? t : null;
       if (t && !validTimer) saveTimerEnd(null);
       setTimerEnd(validTimer);
-      syncWidget(finalRecords, s, validTimer);
+      syncWidget(r, s, validTimer);
 
       // Firebase sync
       if (fc) {
         setFamilyCode(fc);
         familyCodeRef.current = fc;
+        syncFamilyCodeToWidget(fc);
         await initialSync(fc);
         unsubRef.current = subscribeToRecords(fc, (synced) => {
           setRecords(synced);
@@ -222,6 +218,7 @@ function AppContent() {
     await saveFamilyCode(code);
     setFamilyCode(code);
     familyCodeRef.current = code;
+    syncFamilyCodeToWidget(code);
     await initialSync(code);
     unsubRef.current = subscribeToRecords(code, (synced) => {
       setRecords(synced);
@@ -239,6 +236,7 @@ function AppContent() {
     await saveFamilyCode(upper);
     setFamilyCode(upper);
     familyCodeRef.current = upper;
+    syncFamilyCodeToWidget(upper);
     await initialSync(upper);
     unsubRef.current = subscribeToRecords(upper, (synced) => {
       setRecords(synced);
@@ -254,6 +252,7 @@ function AppContent() {
     await clearFamilyCode();
     setFamilyCode(null);
     familyCodeRef.current = null;
+    syncFamilyCodeToWidget(null);
   }, []);
 
   return (

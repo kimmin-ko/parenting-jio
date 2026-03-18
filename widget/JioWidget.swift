@@ -30,6 +30,41 @@ func loadWidgetData() -> WidgetData {
     return decoded
 }
 
+// MARK: - Firebase Helper
+struct WidgetFirebase {
+    static let apiKey = "AIzaSyDk40EB9Dp7MuoOO2ih6KpSNvc7cUQcBKg"
+    static let dbURL = "https://parenting-jio-default-rtdb.firebaseio.com"
+
+    static func getAuthToken() async throws -> String {
+        let url = URL(string: "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=\(apiKey)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["returnSecureToken": true])
+
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        guard let token = json?["idToken"] as? String else {
+            throw URLError(.userAuthenticationRequired)
+        }
+        return token
+    }
+
+    static func pushRecord(familyCode: String, record: [String: Any], recordId: String) async throws {
+        let token = try await getAuthToken()
+        let url = URL(string: "\(dbURL)/families/\(familyCode)/records/\(recordId).json?auth=\(token)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: record)
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+    }
+}
+
 // MARK: - Record Intent (Interactive Button)
 struct RecordFeedingIntent: AppIntent {
     static var title: LocalizedStringResource = "분유 기록"
@@ -38,27 +73,21 @@ struct RecordFeedingIntent: AppIntent {
     func perform() async throws -> some IntentResult {
         let defaults = UserDefaults(suiteName: "group.com.kimmin.parentingjio")
         let data = loadWidgetData()
+        let familyCode = defaults?.string(forKey: "familyCode") ?? ""
 
-        // Create new record with unique ID distinguishable as widget-created
+        // Create new record
         let now = Date().timeIntervalSince1970 * 1000
         let shortUUID = UUID().uuidString.prefix(7)
+        let recordId = "\(Int(now))-\(shortUUID)-w"
         let record: [String: Any] = [
-            "id": "\(Int(now))-\(shortUUID)-w",
+            "id": recordId,
             "timestamp": now,
             "amount": data.defaultMl
         ]
 
-        // Append to pending_widget_records so the app can merge on next open
-        var pending: [[String: Any]] = []
-        if let jsonString = defaults?.string(forKey: "pending_widget_records"),
-           let jsonData = jsonString.data(using: .utf8),
-           let decoded = try? JSONSerialization.jsonObject(with: jsonData) as? [[String: Any]] {
-            pending = decoded
-        }
-        pending.append(record)
-        if let encoded = try? JSONSerialization.data(withJSONObject: pending),
-           let jsonString = String(data: encoded, encoding: .utf8) {
-            defaults?.set(jsonString, forKey: "pending_widget_records")
+        // Push to Firebase directly
+        if !familyCode.isEmpty {
+            try? await WidgetFirebase.pushRecord(familyCode: familyCode, record: record, recordId: recordId)
         }
 
         // Determine if todayCount should reset (date changed since last feeding)
